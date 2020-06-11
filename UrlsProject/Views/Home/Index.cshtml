@@ -1,0 +1,224 @@
+﻿@{
+    ViewBag.Title = "Graph";
+}
+
+<div class="container">
+    <div class="row">
+        <div class="jumbotron">
+            <div class="form-inline">
+                <p class="mr-sm-2">Url time test</p>
+                <input type="url" class="form-control" id="inputGetUrls" placeholder="Url value">
+                <button id="btnGetUrls" type="submit" class="btn btn-primary mb-2">Test time</button>
+            </div>
+            <br />
+            <div class="form-inline">
+                <p class="mr-sm-2">Host history Url</p>
+                <input type="url" class="form-control" id="inputGetHistoryUrls" placeholder="Url value">
+                <button id="btnGetHistoryUrls" type="submit" class="btn btn-primary mb-2">Hitory</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="container">
+    <h4 id="error"></h4>
+    <div id="graphdiv"></div>
+    <br />
+    <br />
+    <p id="tableTestTimeLoading"><strong>Loading</strong></p>
+    <div id="table" class="container hide_none">
+        <table class="table table-hover">
+            <thead>
+                <tr>
+                    <th class="col-xs-6 col-md-6 col-lg-6">Url</th>
+                    <th>Current time (ms)</th>
+                    <th>Min time (ms)</th>
+                    <th>Max time (ms)</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+    <div id="history" class="container hide_none">
+        <h3 id="historyTableTitle" class="center"></h3>
+        <div id="historyTable" class="row table-responsive"></div>
+    </div>
+</div>
+
+@section scripts {
+    <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+    <script type="text/javascript">
+
+        var graph;
+        var inputValueGetUrls;
+        var inputValueGetHistoryUrls;
+        var table;
+        var chart;
+        var error;
+        var history;
+
+        $("#table").css("display", "none");
+        $("#tableTestTimeLoading").css("display", "none");
+
+        function getHistory() {
+            $.ajax({
+                dataType: "json",
+                type: "POST",
+                url: '@Url.Action("GetHostHistory", "Home")',
+                data: "url=" + inputValueGetHistoryUrls.val(),
+                success: successHistory
+            });
+        }
+
+        function getResults() {
+            $.ajax({
+                dataType: "json",
+                type: "POST",
+                url: '@Url.Action("GetResults", "Home")',
+                data: "url=" + inputValueGetUrls.val(),
+                success: successTable
+            });
+
+            $("#tableTestTimeLoading").css("display", "block");
+        }
+
+        function successTable(response) {
+            cleanPage();
+
+            if (!response.Success) {
+                error.html(response.Error);
+                error.css("display", "block");
+
+                return;
+            }
+
+            var length = response.Pages.length;
+            var html = "";
+
+            for (var i = 0; i < length; i++) {
+                html += "<tr>";
+                html += "<td>" + response.Pages[i].Url + "</td>";
+                html += "<td>" + response.Pages[i].ResponseTime + "</td>";
+                html += "<td>" + response.Pages[i].MinResponse + "</td>";
+                html += "<td>" + response.Pages[i].MaxResponse + "</td>";
+                html += "</tr>";
+            }
+
+            drawGraph(response);
+
+            table.css("display", "block");
+            table.find("tbody").html(html);
+
+            inputValueGetUrls.val('');
+            inputValueGetHistoryUrls.val('');
+        }
+
+        function successHistory(response) {
+            cleanPage();
+
+            if (!response.Success) {
+                error.html(response.Error);
+                error.css("display", "block");
+
+                return;
+            }
+
+            var historyTableTitle = historyDivId.find("#historyTableTitle");
+            var historyTable = historyDivId.find("#historyTable");
+            var length = response.HostPages.length;
+            var html = "";
+
+            historyTableTitle.html("From: " + response.HostUrl);
+
+            for (var i = 0; i < length; i++) {
+                html += "<p>Url: " +"<strong>" + response.HostPages[i].Url + "</strong>" + "</p>";
+                html += "<table class='table table-hover'><thead><tr><th class='col'>Date</th><th class='col'>Response (ms)</th></tr></thead>";
+                html += "<tbody>";
+
+                var lengthHistory = response.HostPages[i].HostHistory.length;
+
+                for (var j = 0; j < lengthHistory; j++) {
+                    html += "<tr>";
+                    html += "<td>" + response.HostPages[i].HostHistory[j].Date + "</td>";
+                    html += "<td>" + response.HostPages[i].HostHistory[j].ResponseTime + "</td>";
+                    html += "</tr>";
+                }
+                html += "</tbody>";
+                html += "</table>";
+            }
+
+            historyTable.html(html);
+            historyDivId.css("display", "block");
+
+            inputValueGetUrls.val('');
+            inputValueGetHistoryUrls.val('');
+        }
+
+        function cleanPage() {
+            graph.css("display", "none");
+
+            table.css("display", "none");
+            table.find("tbody").empty();
+
+            historyDivId.css("display", "none");
+            historyDivId.find("#historyTableTitle").empty();
+            historyDivId.find("#historyTable").empty();
+
+            error.css("display", "none");
+
+            $("#tableTestTimeLoading").css("display", "none");
+        }
+
+        $(document).ready(function () {
+            graph = $("#graphdiv");
+            inputValueGetUrls = $("#inputGetUrls");
+            inputValueGetHistoryUrls = $("#inputGetHistoryUrls");
+            historyDivId = $("#history");
+            error = $("#error");
+            table = $("#table");
+
+            $("body").on("click", "#btnGetHistoryUrls", getHistory);
+            $("body").on("click", "#btnGetUrls", getResults);
+        });
+
+        google.charts.load('current',
+            {
+                packages: ['corechart', 'bar']
+            });
+
+    function drawGraph(response) {
+        var dataTable = new google.visualization.DataTable();
+
+        dataTable.addColumn('string', 'Url');
+        dataTable.addColumn('number', 'Time (ms)');
+
+        for (var i = 0; i < response.Pages.length; i++) {
+            var row = [response.Pages[i].Url, response.Pages[i].ResponseTime];
+            dataTable.addRow(row);
+        }
+
+        var height = response.Pages.length * 25+130;
+        var title = 'Response';
+
+        var options = {
+            title: title,
+            height: height,
+            chartArea: { width: '55%', height: '70%' },
+            hAxis: {
+                title: 'Milsec',
+            },
+            vAxis: {
+                title: 'Urls'
+            },
+            backgroundColor: 'blanchedalmond'
+        };
+
+        if (chart == null) {
+            chart = new google.visualization.BarChart(document.getElementById('graphdiv'));
+        }
+
+        $("#graphdiv").css("display", "block");
+        chart.draw(dataTable, options);
+    }
+    </script>
+}
